@@ -1,116 +1,141 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
-#include <cstdlib> // for rand() and srand()
-#include <ctime> // for time()
+#include <cstdlib>
+#include <ctime>
+#include <cmath>
+#include <iomanip>
 
 using namespace std;
 
-const float MAX_POSITION = 100.0f; // maximum position on the road
-const float DEFAULT_SPEED = 1.0f; // default speed of vehicles
-const float MAX_SPEED_CHANGE = 1.0f; // maximum speed change in one time-step
+const float RANDOM_RANGE = 1.0;
 
 class Vehicle {
 protected:
     float position;
-    float speed;
+    float velocity;
 
 public:
-    Vehicle(float initialPosition, float initialSpeed) : position(initialPosition), speed(initialSpeed) {}
+    Vehicle(float pos, float vel) : position(pos), velocity(vel) {}
 
     virtual void updatePosition(float dt) {
-        position += speed * dt;
+        position += velocity * dt;
     }
 
-    virtual void adjustSpeed() {
-        float speedChange = (rand() % 3 - 1) * MAX_SPEED_CHANGE; // random speed change between -1 and 1
-        speed += speedChange;
+    void adjustVelocity() {
+        const float maxChange = 0.1; // Phạm vi thay đổi tối đa
+        velocity += (static_cast<float>(rand()) / RAND_MAX) * maxChange * 2 - maxChange;
+
+        // Làm tròn kết quả vận tốc đến 2 chữ số thập phân
+        velocity = round(velocity * 100.0) / 100.0;
+
+        // Đảm bảo vận tốc không vượt quá giới hạn
+        if (velocity > 1.0) {
+            velocity = 1.0;
+        }
+        else if (velocity < -1.0) {
+            velocity = -1.0;
+        }
     }
 
-    float getPosition() const {
-        return position;
-    }
+    float getPosition() const { return position; }
+};
 
-    float getSpeed() const {
-        return speed;
-    }
+class Motorcycle : public Vehicle {
+public:
+    Motorcycle(float pos, float vel) : Vehicle(pos, vel) {}
 };
 
 class Car : public Vehicle {
 public:
-    Car(float initialPosition, float initialSpeed) : Vehicle(initialPosition, initialSpeed) {}
-
-    // Optionally, you can override the updatePosition and adjustSpeed methods if Car needs specific behavior.
+    Car(float pos, float vel) : Vehicle(pos, vel) {}
 };
 
-class TrafficSimulation {
-private:
-    vector<Vehicle*> vehicles;
-    float roadLength;
-    float dt;
-    int maxVehicles;
-
+class Truck : public Vehicle {
 public:
-    TrafficSimulation(float roadLength, float timeStep, int maxVehicles) : roadLength(roadLength), dt(timeStep), maxVehicles(maxVehicles) {}
+    Truck(float pos, float vel) : Vehicle(pos, vel) {}
+};
 
-    void initialize() {
-        srand(static_cast<unsigned int>(time(nullptr))); // seed the random number generator
-
-        // Create initial vehicles
-        vehicles.push_back(new Car(0.0f, DEFAULT_SPEED));
+void simulateTraffic(float L, float dt, int n, int N_MAX1, int N_MAX2, int N_MAX3, vector<Vehicle*>& vehicles) {
+    ofstream outFile("mophong.txt");
+    if (!outFile.is_open()) {
+        cerr << "Failed to open output file!" << endl;
+        return;
     }
 
-    void simulate(int steps) {
-        ofstream outputFile("mophong.txt");
-        if (!outputFile.is_open()) {
-            cerr << "Error opening output file!" << endl;
-            return;
+    int totalVehicleCount = N_MAX1 + N_MAX2 + N_MAX3;
+    int vehicleCounts[3] = { N_MAX1, N_MAX2, N_MAX3 };
+
+    for (int i = 0; i < n; ++i) {
+        for (auto it = vehicles.begin(); it != vehicles.end();) {
+            (*it)->updatePosition(dt);
+            (*it)->adjustVelocity();
+
+            if ((*it)->getPosition() > L) {
+                delete* it;
+                it = vehicles.erase(it);
+            }
+            else {
+                ++it;
+            }
         }
 
-        for (int i = 0; i < steps; ++i) {
-            for (auto it = vehicles.begin(); it != vehicles.end(); ) {
-                (*it)->updatePosition(dt);
-                (*it)->adjustSpeed();
-                
-                if ((*it)->getPosition() > roadLength) {
-                    delete *it;
-                    it = vehicles.erase(it);
-                } else {
-                    outputFile << (*it)->getPosition() << " ";
-                    ++it;
+        // Create new vehicles if needed
+        for (int j = 0; j < 3; ++j) {
+            for (int k = 0; k < vehicleCounts[j]; ++k) {
+                if (vehicles.size() < totalVehicleCount) {
+                    switch (j) {
+                    case 0:
+                        vehicles.push_back(new Motorcycle(0, 1.0)); // Motorcycle
+                        break;
+                    case 1:
+                        vehicles.push_back(new Car(0, 1.0)); // Car
+                        break;
+                    case 2:
+                        vehicles.push_back(new Truck(0, 1.0)); // Truck
+                        break;
+                    }
                 }
             }
-
-            if (vehicles.size() < maxVehicles) {
-                vehicles.push_back(new Car(0.0f, DEFAULT_SPEED));
-            }
-
-            outputFile << endl;
         }
 
-        outputFile.close();
+        // Write vehicle positions to file
+        for (const auto& vehicle : vehicles) {
+            outFile << fixed << setprecision(2) << vehicle->getPosition() << " ";
+        }
+        outFile << endl;
     }
 
-    ~TrafficSimulation() {
-        for (auto vehicle : vehicles) {
-            delete vehicle;
-        }
-        vehicles.clear();
-    }
-};
+    outFile.close();
+}
 
 int main() {
-    int n; // number of steps
-    float L; // road length
-    float dt; // time-step
-    int N_MAX; // maximum number of vehicles
+    srand(time(nullptr)); // Seed random number generator
 
-    cout << "Enter the number of steps, road length, time-step, and maximum number of vehicles: ";
-    cin >> n >> L >> dt >> N_MAX;
+    float L, dt;
+    int n, N_MAX1, N_MAX2, N_MAX3;
 
-    TrafficSimulation simulation(L, dt, N_MAX);
-    simulation.initialize();
-    simulation.simulate(n);
+    cout << "Enter length of road (L): ";
+    cin >> L;
+    cout << "Enter time step (dt): ";
+    cin >> dt;
+    cout << "Enter number of time steps (n): ";
+    cin >> n;
+    cout << "Enter maximum number of motorcycles (N_MAX1): ";
+    cin >> N_MAX1;
+    cout << "Enter maximum number of cars (N_MAX2): ";
+    cin >> N_MAX2;
+    cout << "Enter maximum number of trucks (N_MAX3): ";
+    cin >> N_MAX3;
+
+    vector<Vehicle*> vehicles;
+
+    simulateTraffic(L, dt, n, N_MAX1, N_MAX2, N_MAX3, vehicles);
+
+    // Clean up memory
+    for (auto& vehicle : vehicles) {
+        delete vehicle;
+    }
 
     return 0;
 }
